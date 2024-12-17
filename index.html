@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบกระจายสินค้า</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        .delete-btn {
+            color: white;
+            background-color: red;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>ระบบกระจายสินค้า</h1>
+
+  <script>
+    const suggestionsList = document.getElementById('product-suggestions');
+
+    // โหลดไฟล์ .txt
+    async function fetchProductsFromTxt() {
+        try {
+            const response = await fetch('products.txt'); // ชื่อไฟล์ที่เก็บในโปรเจกต์
+            const data = await response.text();
+            const products = data.split('\n').map(item => item.trim()).filter(Boolean); // แยกสินค้าแต่ละบรรทัด
+            populateProductSuggestions(products);
+        } catch (error) {
+            console.error('Error loading products:', error);
+        }
+    }
+
+    // เพิ่มสินค้าใน datalist
+    function populateProductSuggestions(products) {
+        suggestionsList.innerHTML = ''; // ล้างรายการเดิม
+        products.forEach(product => {
+            const option = document.createElement('option');
+            option.value = product;
+            suggestionsList.appendChild(option);
+        });
+    }
+
+    // โหลดสินค้าตอนเริ่มต้นหน้าเว็บ
+    fetchProductsFromTxt();
+</script>
+  
+    <!-- ฟอร์มเพิ่มข้อมูล -->
+    <form id="product-form">
+        ชื่อสินค้า: <input type="text" id="product-name" required list="product-suggestions">
+        <datalist id="product-suggestions"></datalist>
+        จำนวน: <input type="number" id="product-quantity" required>
+        หน่วย: 
+        <select id="product-unit">
+            <option value="pcs">pcs</option>
+            <option value="pack">pack</option>
+        </select>
+        <button type="submit">เพิ่มรายการ</button>
+    </form>
+
+    <!-- ตารางแสดงรายการ -->
+    <table id="product-table">
+        <thead>
+            <tr>
+                <th>ลำดับ</th>
+                <th>ชื่อสินค้า</th>
+                <th>จำนวน</th>
+                <th>หน่วย</th>
+                <th>การจัดการ</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <button id="export-btn">Export CSV</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script>
+        let products = [];
+
+        const form = document.getElementById('product-form');
+        const tableBody = document.querySelector('#product-table tbody');
+        const exportBtn = document.getElementById('export-btn');
+        const suggestionsList = document.getElementById('product-suggestions');
+
+        // โหลดไฟล์ .txt
+        async function fetchProductsFromTxt() {
+            try {
+                const response = await fetch('products.txt'); // หรือเปลี่ยนเป็น products.json
+                const data = await response.text();
+                const products = data.split('\n').map(item => item.trim()).filter(Boolean); // แยกสินค้าแต่ละบรรทัด
+                populateProductSuggestions(products);
+            } catch (error) {
+                console.error('Error loading products:', error);
+            }
+        }
+
+        // เพิ่มสินค้าใน datalist
+        function populateProductSuggestions(products) {
+            suggestionsList.innerHTML = ''; // ล้างรายการเดิม
+            products.forEach(product => {
+                const option = document.createElement('option');
+                option.value = product;
+                suggestionsList.appendChild(option);
+            });
+        }
+
+        // เพิ่มข้อมูลสินค้า
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('product-name').value;
+            const quantity = document.getElementById('product-quantity').value;
+            const unit = document.getElementById('product-unit').value;
+
+            const product = { name, quantity, unit };
+            products.push(product);
+            renderTable();
+
+            form.reset();
+        });
+
+        // แสดงข้อมูลในตาราง
+        function renderTable() {
+            tableBody.innerHTML = '';
+            products.forEach((product, index) => {
+                const row = `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${product.name}</td>
+                        <td>${product.quantity}</td>
+                        <td>${product.unit}</td>
+                        <td>
+                            <button class="delete-btn" onclick="deleteProduct(${index})">ลบ</button>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // ฟังก์ชันลบสินค้า
+        function deleteProduct(index) {
+            products.splice(index, 1); // ลบรายการออกจาก array
+            renderTable(); // อัปเดตตารางใหม่
+        }
+
+        // Export ข้อมูลเป็น CSV
+        exportBtn.addEventListener('click', () => {
+            const csvData = Papa.unparse(products, {
+                header: true
+            });
+
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'product_distribution.csv';
+            link.click();
+        });
+
+        // โหลดสินค้าตอนเริ่มต้นหน้าเว็บ
+        fetchProductsFromTxt(); // หรือ fetchProductsFromJson() หากใช้ .json
+    </script>
+</body>
+</html>
