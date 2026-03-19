@@ -1,63 +1,799 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th" class="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบกระจายสินค้า</title>
+    <title>Created By ST Team</title>
+    
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 850: '#1e293b' }
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-        table {
-            width: 100%;
-            border-collapse: collapse;
+        body { font-family: 'Sarabun', sans-serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        .card { transition: all 0.3s ease; }
+        .card:hover { transform: translateY(-2px); }
+        
+        /* Animations */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .list-move, .list-enter-active, .list-leave-active { transition: all 0.4s ease; }
+        .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-20px); }
+        .list-leave-active { position: absolute; }
+        
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        table, th, td {
-            border: 1px solid black;
+
+        /* Drag & Drop Styles */
+        .draggable-item { cursor: grab; }
+        .draggable-item:active { cursor: grabbing; }
+        .drop-zone { transition: all 0.2s; }
+        .drop-zone.drag-over { 
+            background-color: rgba(99, 102, 241, 0.1); 
+            border: 2px dashed #6366f1; 
+            transform: scale(1.02);
         }
-        th, td {
-            padding: 8px;
-            text-align: center;
+        .dark .drop-zone.drag-over { 
+            background-color: rgba(99, 102, 241, 0.2); 
+            border-color: #818cf8;
         }
-        button {
-            cursor: pointer;
+
+        .btn-tool {
+            @apply px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-sm transform active:scale-95;
+        }
+
+        /* --- IMPORTANT: CSS สำหรับจัดหน้า PDF --- */
+        .break-inside-avoid {
+            break-inside: avoid;
+            page-break-inside: avoid; /* สำหรับ Browser เก่า */
         }
     </style>
 </head>
-<body>
-    <h1>ระบบกระจายสินค้า</h1>
+<body class="p-4 md:p-8 min-h-screen transition-colors duration-300 bg-slate-50 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
 
-    <!-- ฟอร์มเพิ่มข้อมูล -->
-    <form id="product-form">
-        ชื่อสินค้า: 
-        <input type="text" id="product-name" list="product-suggestions" required>
-        <datalist id="product-suggestions"></datalist>
+    <div id="app" class="max-w-[1400px] mx-auto">
         
-        จำนวน: 
-        <input type="number" id="product-quantity" required>
-        
-        หน่วย: 
-        <select id="product-unit">
-            <option value="pcs">pcs</option>
-            <option value="pack">pack</option>
-        </select>
-        
-        <button type="submit">เพิ่มรายการ</button>
-    </form>
+        <div class="mb-8 relative">
+            <div class="flex justify-end gap-2 mb-2">
+                 <button @click="saveDataToFile" class="btn-tool bg-blue-50 text-blue-600 dark:bg-slate-800 dark:text-blue-400 border border-blue-100 dark:border-slate-700">
+                    <i class="fa-solid fa-download"></i> Save Data
+                </button>
+                <label class="btn-tool bg-gray-50 text-gray-600 dark:bg-slate-800 dark:text-gray-400 border border-gray-100 dark:border-slate-700 cursor-pointer">
+                    <i class="fa-solid fa-upload"></i> Load Data
+                    <input type="file" @change="loadDataFromFile" class="hidden" accept=".json">
+                </label>
+                <button @click="toggleDarkMode" class="btn-tool bg-slate-200 text-slate-600 dark:bg-yellow-400 dark:text-yellow-900 border border-slate-300 dark:border-yellow-500 ml-2">
+                    <i class="fa-solid" :class="isDarkMode ? 'fa-sun' : 'fa-moon'"></i>
+                </button>
+            </div>
 
-    <!-- ตารางแสดงรายการ -->
-    <table id="product-table">
-        <thead>
-            <tr>
-                <th>ลำดับ</th>
-                <th>ชื่อสินค้า</th>
-                <th>จำนวน</th>
-                <th>หน่วย</th>
-                <th>การจัดการ</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+            <div class="text-center">
+                <h1 class="text-3xl md:text-4xl font-bold text-indigo-700 dark:text-indigo-400 mb-2 drop-shadow-sm flex justify-center items-center gap-3">
+                    <i class="fa-solid fa-scale-balanced"></i>
+                    ระบบกระจายงาน V0.1
+                </h1>
+                <p class="text-gray-500 dark:text-gray-400 text-lg">Created By SHU</p>
+            </div>
+            
+            <transition name="fade">
+                <div v-if="toast.show" 
+                     class="fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-xl text-white font-medium flex items-center gap-3 max-w-sm"
+                     :class="toast.type === 'error' ? 'bg-red-500' : 'bg-emerald-600'">
+                    <i :class="toast.type === 'error' ? 'fa-solid fa-circle-exclamation text-xl' : 'fa-solid fa-circle-check text-xl'"></i>
+                    <div>
+                        <div class="font-bold text-sm opacity-90">{{ toast.type === 'error' ? 'เกิดข้อผิดพลาด' : 'สำเร็จ' }}</div>
+                        <div class="text-sm">{{ toast.message }}</div>
+                    </div>
+                </div>
+            </transition>
+        </div>
 
-    <button id="export-btn">Export CSV</button>
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <div class="xl:col-span-5 space-y-6">
+                
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-indigo-100 dark:border-slate-700 card relative overflow-hidden transition-colors">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+                    <div class="flex justify-between items-center mb-4 pl-3">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                            <i class="fa-solid fa-users text-indigo-500"></i> จำนวนพนักงาน ({{ employees.length }})
+                        </h2>
+                        <div class="space-x-2">
+                            <button @click="resetEmployees" class="text-xs text-gray-400 hover:text-red-500 underline transition">รีเซ็ต</button>
+                            <button @click="addEmployee" class="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-sm font-semibold transition shadow-sm border border-indigo-100 dark:border-indigo-800">
+                                <i class="fa-solid fa-plus"></i> เพิ่มคน
+                            </button>
+                        </div>
+                    </div>
 
-    <script src="script.js"></script>
+                    <div class="flex text-xs text-gray-400 mb-2 px-2 font-medium uppercase tracking-wide">
+                        <div class="w-8 text-center">#</div>
+                        <div class="flex-1">ชื่อ</div>
+                        <div class="w-24 text-center cursor-help" title="ความสามารถในการรับงาน (100% = ปกติ)">Capacity %</div>
+                        <div class="w-6"></div>
+                    </div>
+
+                    <div class="space-y-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar relative">
+                        <transition-group name="list">
+                            <div v-for="(emp, index) in employees" :key="emp.id" class="flex items-center gap-2 group bg-gray-50 dark:bg-slate-700/50 p-1.5 rounded border border-transparent hover:border-indigo-200 dark:hover:border-indigo-500 hover:bg-white dark:hover:bg-slate-700 transition duration-200">
+                                <span class="text-gray-400 w-8 text-center text-sm font-mono">{{ index + 1 }}</span>
+                                <input type="text" v-model="emp.name" 
+                                    class="flex-1 bg-transparent border-b border-gray-200 dark:border-slate-600 focus:border-indigo-500 focus:outline-none text-sm py-1 transition text-gray-700 dark:text-gray-200 font-medium placeholder-gray-300" 
+                                    placeholder="ชื่อพนักงาน">
+                                
+                                <div class="w-24 flex items-center justify-center relative">
+                                    <input type="number" v-model.number="emp.capacity" min="10" max="300" step="10"
+                                        class="w-16 text-center bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded text-xs py-1 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none transition dark:text-white"
+                                        :class="getCapacityColor(emp.capacity)">
+                                    <span class="absolute right-2 text-[10px] text-gray-400 pointer-events-none">%</span>
+                                </div>
+
+                                <button @click="removeEmployee(index)" class="text-gray-300 hover:text-red-500 w-6 h-6 flex items-center justify-center transition rounded-full hover:bg-red-50 dark:hover:bg-red-900/30">
+                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                </button>
+                            </div>
+                        </transition-group>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-orange-100 dark:border-slate-700 card relative overflow-hidden transition-colors">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
+                    <div class="flex justify-between items-center mb-4 pl-3">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                            <i class="fa-solid fa-boxes-stacked text-orange-500"></i> รายการงาน ({{ totalTasksCount }})
+                        </h2>
+                        <div class="space-x-2">
+                            <button @click="resetTaskSets" class="text-xs text-gray-400 hover:text-red-500 underline transition">ล้างงาน</button>
+                            <button @click="addTaskSet" class="bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-300 px-3 py-1.5 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/50 text-sm font-semibold transition shadow-sm border border-orange-100 dark:border-orange-800">
+                                <i class="fa-solid fa-plus"></i> เพิ่มชุดงาน
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar pb-20">
+                        <transition-group name="list">
+                            <div v-for="(set, setIndex) in taskSets" :key="set.id" 
+                                 class="border rounded-lg bg-white dark:bg-slate-700 relative transition-all duration-300 group shadow-sm hover:shadow-md"
+                                 :class="setIndex === 0 ? 'border-l-4 border-l-orange-400 border-y-gray-200 dark:border-y-slate-600 border-r-gray-200 dark:border-r-slate-600' : 'border-gray-200 dark:border-slate-600 hover:border-orange-300'">
+                                
+                                <div class="bg-gray-50/80 dark:bg-slate-600/50 p-3 border-b border-gray-100 dark:border-slate-600 flex justify-between items-center">
+                                    <div class="flex items-center gap-2 flex-1">
+                                        <span class="w-3 h-3 rounded-full shadow-sm ring-2 ring-white dark:ring-slate-500" :class="getDotColor(setIndex)"></span>
+                                        <input type="text" v-model="set.setName" 
+                                            class="bg-transparent font-bold text-gray-700 dark:text-gray-200 text-sm focus:outline-none border-b border-transparent focus:border-orange-300 w-full hover:border-gray-300 dark:hover:border-slate-500 transition"
+                                            placeholder="ชื่อโซน...">
+                                    </div>
+                                    <button @click="removeTaskSet(setIndex)" class="text-gray-300 hover:text-red-600 text-xs transition px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30">
+                                        <i class="fa-regular fa-trash-can"></i>
+                                    </button>
+                                </div>
+                                
+                                <div class="p-3 bg-white dark:bg-slate-700 space-y-3">
+                                    
+                                    <div class="flex gap-2 mb-2">
+                                        <button @click="set.mode = 'single'" class="text-[10px] px-2 py-1 rounded-md transition" :class="set.mode === 'single' ? 'bg-orange-100 text-orange-700 font-bold dark:bg-orange-900 dark:text-orange-200' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-600'">รายชิ้น</button>
+                                        <button @click="set.mode = 'bulk'" class="text-[10px] px-2 py-1 rounded-md transition" :class="set.mode === 'bulk' ? 'bg-indigo-100 text-indigo-700 font-bold dark:bg-indigo-900 dark:text-indigo-200' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-600'">วางด่วน (Excel)</button>
+                                    </div>
+
+                                    <div v-if="set.mode === 'single'" class="flex gap-2 items-center">
+                                        <input type="text" v-model="set.tempName" 
+                                            @keyup.enter="focusNextInput($event)"
+                                            class="flex-1 border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded px-2 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none"
+                                            placeholder="ชื่อร้าน (เช่น ShopName)">
+                                        <input type="number" v-model.number="set.tempValue" 
+                                            @keyup.enter="addItemToSet(set)"
+                                            class="w-20 border border-gray-200 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white rounded px-2 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none text-center"
+                                            placeholder="จำนวน">
+                                        <button @click="addItemToSet(set)" class="bg-orange-500 text-white px-3 py-1.5 rounded hover:bg-orange-600 text-xs shadow-sm transition active:scale-95">
+                                            <i class="fa-solid fa-plus"></i>
+                                        </button>
+                                    </div>
+
+                                    <div v-else>
+                                        <textarea v-model="set.bulkInput" rows="3"
+                                            class="w-full border border-gray-200 dark:border-slate-500 rounded p-2 text-xs font-mono focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none resize-none bg-gray-50 dark:bg-slate-800 dark:text-white placeholder-gray-400"
+                                            placeholder="วางข้อมูลจาก Excel (ชื่อ เว้นวรรค จำนวน)&#10;JobA 50&#10;JobB 20"></textarea>
+                                        <button @click="parseBulkInput(set)" class="w-full mt-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 py-1 rounded text-xs hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 font-semibold">
+                                            <i class="fa-solid fa-magic-wand-sparkles"></i> แปลงข้อมูล
+                                        </button>
+                                    </div>
+
+                                    <div class="mt-2" v-if="set.items.length > 0">
+                                        <div class="flex justify-between text-[10px] text-gray-400 mb-1 px-1">
+                                            <span>รายการ</span>
+                                            <span>จำนวน</span>
+                                        </div>
+                                        <div class="max-h-[150px] overflow-y-auto custom-scrollbar space-y-1">
+                                            <div v-for="(item, iIndex) in set.items" :key="iIndex" 
+                                                class="flex justify-between items-center text-xs bg-gray-50 dark:bg-slate-800 px-2 py-1 rounded border border-gray-100 dark:border-slate-600 group/item hover:bg-white dark:hover:bg-slate-600 hover:border-gray-200 dark:hover:border-slate-500 hover:shadow-sm">
+                                                <div class="flex items-center gap-2 overflow-hidden">
+                                                    <span class="text-gray-400 text-[10px] w-4">{{ iIndex + 1 }}.</span>
+                                                    <span class="font-medium text-gray-700 dark:text-gray-200 truncate max-w-[150px]" :title="item.name">{{ item.name }}</span>
+                                                </div>
+                                                <div class="flex items-center gap-3">
+                                                    <span class="font-mono font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-1.5 rounded">{{ item.value }}</span>
+                                                    <button @click="removeItemFromSet(set, iIndex)" class="text-gray-300 hover:text-red-500 transition">
+                                                        <i class="fa-solid fa-xmark"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-right mt-1 text-[10px] text-gray-400">
+                                            รวม: <span class="font-bold text-gray-600 dark:text-gray-300">{{ sumSet(set).toLocaleString() }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-center py-4 text-gray-300 text-xs border border-dashed border-gray-200 dark:border-slate-600 rounded bg-gray-50/50 dark:bg-slate-800/50">
+                                        ยังไม่มีรายการ
+                                    </div>
+
+                                </div>
+                            </div>
+                        </transition-group>
+                    </div>
+                </div>
+
+                <button @click="calculateDistribution" 
+                    class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none transition transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 text-lg group overflow-hidden relative z-10">
+                    <div class="absolute inset-0 bg-white/10 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                    <i class="fa-solid fa-rocket group-hover:animate-bounce"></i> 
+                    <span>คำนวณและกระจายงาน</span>
+                </button>
+
+            </div>
+
+            <div class="xl:col-span-7">
+                
+                <div v-if="distributedResults.length > 0" class="animate-fade-in-up h-full flex flex-col">
+                    
+                    <div class="flex flex-wrap gap-2 mb-4 justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700">
+                        <div class="flex items-center pl-3 text-sm text-gray-500 dark:text-gray-400 font-medium">
+                           <i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i> ผลลัพธ์ (ลากย้ายได้)
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="exportToExcel" class="btn-tool bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50 border border-green-200 dark:border-green-800">
+                                <i class="fa-regular fa-file-excel text-lg"></i> Excel
+                            </button>
+                            <button @click="exportToImage" class="btn-tool bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 border border-purple-200 dark:border-purple-800">
+                                <i class="fa-regular fa-image text-lg"></i> Image
+                            </button>
+                            <button @click="exportToPDF" class="btn-tool bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800">
+                                <i class="fa-regular fa-file-pdf text-lg"></i> PDF
+                            </button>
+                            <button @click="copyText" class="btn-tool bg-gray-50 text-gray-700 hover:bg-gray-100 dark:bg-slate-700 dark:text-gray-300 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600">
+                                <i class="fa-regular fa-copy text-lg"></i> Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="export-area" class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-xl shadow-lg border border-gray-100 dark:border-slate-700 relative flex-1 transition-colors">
+                        
+                        <div class="absolute top-4 right-4 text-gray-100 dark:text-slate-700 text-6xl font-bold opacity-30 select-none pointer-events-none">
+                            SHU - ST Team
+                        </div>
+
+                        <div class="text-center mb-8 border-b border-gray-200 dark:border-slate-700 pb-6">
+                            <h2 class="text-2xl font-bold text-gray-800 dark:text-white">สรุปผลการกระจายงาน</h2>
+                            <p class="text-gray-400 text-xs mt-1">
+                                <i class="fa-regular fa-clock"></i> ข้อมูล ณ วันที่ {{ new Date().toLocaleString('th-TH') }}
+                            </p>
+                            
+                            <div class="grid grid-cols-3 gap-4 mt-6 max-w-2xl mx-auto">
+                                <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-center border border-blue-100 dark:border-blue-900 card">
+                                    <div class="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total</div>
+                                    <div class="text-xl font-bold text-blue-700 dark:text-blue-400">{{ grandTotalItems }} <span class="text-sm font-normal text-blue-400">ร้าน</span></div>
+                                </div>
+                                <div class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-center border border-green-100 dark:border-green-900 card">
+                                    <div class="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Total Weight / รวม</div>
+                                    <div class="text-xl font-bold text-green-700 dark:text-green-400">{{ grandTotalWeight.toLocaleString() }} <span class="text-[10px] font-normal text-green-500">รายการ</span></div>
+                                </div>
+                                <div class="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-lg text-center border border-indigo-100 dark:border-indigo-900 card">
+                                    <div class="text-xs text-indigo-500 font-bold uppercase tracking-wide mb-1">MEAN Avg. / คนละ</div>
+                                    <div class="text-xl font-bold text-indigo-700 dark:text-indigo-400">~{{ totalCapacityPoints > 0 ? (grandTotalWeight / totalCapacityPoints * 100).toFixed(0) : 0 }} <span class="text-[10px] font-normal">รายการ</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div v-for="(result, bucketIndex) in distributedResults" :key="bucketIndex" 
+                                 class="drop-zone break-inside-avoid border rounded-lg overflow-hidden flex flex-col h-full bg-white dark:bg-slate-700 shadow-sm hover:shadow-md transition group border-gray-200 dark:border-slate-600"
+                                 @dragover.prevent="handleDragOver"
+                                 @drop="handleDrop($event, bucketIndex)"
+                                 @dragenter="handleDragEnter"
+                                 @dragleave="handleDragLeave">
+                                
+                                <div class="p-3 border-b border-gray-100 dark:border-slate-600 bg-gray-50 dark:bg-slate-600/50 flex justify-between items-start relative overflow-hidden">
+                                    <div class="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-1000" 
+                                         :style="{ width: Math.min(getLoadPercentage(result.totalWeight, result.capacity), 100) + '%' }"></div>
+
+                                    <div class="flex items-center gap-3 z-10 w-full">
+                                        <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-500 text-gray-600 dark:text-gray-300 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0">
+                                            {{ bucketIndex + 1 }}
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex justify-between items-center">
+                                                <h3 class="font-bold text-gray-800 dark:text-white leading-tight truncate pr-2">{{ result.employeeName }}</h3>
+                                                <div class="font-bold text-lg text-indigo-700 dark:text-indigo-400 leading-none whitespace-nowrap">{{ result.totalWeight.toLocaleString() }}</div>
+                                            </div>
+                                            
+                                            <div class="flex justify-between items-center mt-1">
+                                                <div class="text-[10px] text-gray-500 dark:text-gray-400 flex gap-2 items-center">
+                                                    <span class="bg-gray-200 dark:bg-slate-600 px-1.5 rounded text-gray-600 dark:text-gray-300" title="Capacity"><i class="fa-solid fa-gauge-high mr-1"></i>{{ result.capacity }}%</span>
+                                                </div>
+                                                <div v-if="result.tasks.length > 0" 
+                                                     class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-800 border shadow-sm"
+                                                     :class="getLoadColorClass(getLoadPercentage(result.totalWeight, result.capacity))">
+                                                    Load: {{ getLoadPercentage(result.totalWeight, result.capacity) }}%
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="p-3 bg-white dark:bg-slate-700 flex-1 min-h-[100px]">
+                                    <div v-if="result.tasks.length === 0" class="h-full flex flex-col items-center justify-center text-gray-300 dark:text-gray-500 text-sm py-4">
+                                        <i class="fa-solid fa-mug-hot text-2xl mb-2 opacity-50"></i>
+                                        <span>ว่างงาน (ลากงานมาใส่ได้)</span>
+                                    </div>
+                                    <div v-else class="space-y-1.5">
+                                        <div v-for="(task, tIndex) in result.tasks" :key="tIndex" 
+                                             draggable="true"
+                                             @dragstart="handleDragStart($event, bucketIndex, tIndex)"
+                                             class="draggable-item flex justify-between items-center text-xs px-2 py-1.5 rounded border border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-600 hover:shadow-sm transition select-none group/task">
+                                            
+                                            <div class="flex items-center gap-2 overflow-hidden flex-1">
+                                                <span class="w-2 h-2 rounded-full flex-shrink-0 cursor-grab" :class="getDotColor(task.originalSetIndex)"></span>
+                                                <input v-model="task.name" class="bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:outline-none w-full text-gray-700 dark:text-gray-200 font-medium" />
+                                            </div>
+                                            <input type="number" v-model.number="task.value" @change="recalcBucketWeight(bucketIndex)" class="w-12 text-right bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:outline-none font-mono font-bold text-gray-500 dark:text-gray-400" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gray-50 dark:bg-slate-600/50 px-3 py-2 text-[10px] text-gray-400 dark:text-gray-400 border-t border-gray-100 dark:border-slate-600 flex justify-between items-center">
+                                    <span><i class="fa-solid fa-cubes mr-1"></i>จำนวน {{ result.tasks.length }} งาน</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl bg-gray-50/50 dark:bg-slate-800/30 min-h-[500px]">
+                    <div class="w-24 h-24 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center mb-6 text-5xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <i class="fa-solid fa-calculator text-indigo-200 dark:text-indigo-800"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-500 dark:text-gray-400 mb-2">พร้อมคำนวณงาน</h3>
+                    <p class="text-sm max-w-xs text-center text-gray-400 dark:text-gray-500">เพิ่ม "ชื่องาน" และ "จำนวน" ทางซ้ายมือ<br>ระบบจะกระจายงานให้อัตโนมัติ</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    isDarkMode: false,
+                    draggedItem: null,
+                    employees: [
+                        { name: 'พนักงาน 1', capacity: 100, id: 1 },
+                        { name: 'พนักงาน 2', capacity: 100, id: 2 },
+                        { name: 'พนักงาน 3', capacity: 100, id: 3 }
+                    ],
+                    taskSets: [
+                        { 
+                            id: 1, 
+                            setName: "โซน 1", 
+                            mode: 'single', 
+                            tempName: '', tempValue: '', bulkInput: '',
+                            items: [
+                                { name: "Job A", value: 50 },
+                                { name: "Job B", value: 30 },
+                                { name: "Job C", value: 20 }
+                            ] 
+                        }
+                    ],
+                    distributedResults: [],
+                    toast: { show: false, message: '', type: 'success' },
+                    
+                    colors: [
+                        { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+                        { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
+                        { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+                        { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+                        { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
+                        { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-500' },
+                        { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500' },
+                        { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', dot: 'bg-yellow-500' },
+                    ]
+                }
+            },
+            mounted() {
+                this.loadFromStorage();
+                this.initTheme();
+            },
+            watch: {
+                employees: { handler() { this.saveToStorage(); }, deep: true },
+                taskSets: { handler() { this.saveToStorage(); }, deep: true }
+            },
+            computed: {
+                grandTotalWeight() { return this.distributedResults.reduce((sum, res) => sum + res.totalWeight, 0); },
+                grandTotalItems() { return this.distributedResults.reduce((sum, res) => sum + res.tasks.length, 0); },
+                totalCapacityPoints() { return this.distributedResults.reduce((sum, res) => sum + res.capacity, 0); },
+                totalTasksCount() { return this.taskSets.reduce((sum, set) => sum + set.items.length, 0); }
+            },
+            methods: {
+                // --- Dark Mode ---
+                toggleDarkMode() {
+                    this.isDarkMode = !this.isDarkMode;
+                    if(this.isDarkMode) document.documentElement.classList.add('dark');
+                    else document.documentElement.classList.remove('dark');
+                    localStorage.setItem('jd_dark_mode', this.isDarkMode);
+                },
+                initTheme() {
+                    const saved = localStorage.getItem('jd_dark_mode');
+                    if(saved === 'true') {
+                        this.isDarkMode = true;
+                        document.documentElement.classList.add('dark');
+                    }
+                },
+
+                // --- Drag & Drop Logic ---
+                handleDragStart(evt, bucketIndex, taskIndex) {
+                    this.draggedItem = { bucketIndex, taskIndex };
+                    evt.dataTransfer.effectAllowed = 'move';
+                },
+                handleDragOver(evt) {
+                    evt.preventDefault(); 
+                    evt.dataTransfer.dropEffect = 'move';
+                    return false;
+                },
+                handleDragEnter(evt) { evt.currentTarget.classList.add('drag-over'); },
+                handleDragLeave(evt) { evt.currentTarget.classList.remove('drag-over'); },
+                handleDrop(evt, toBucketIndex) {
+                    evt.currentTarget.classList.remove('drag-over');
+                    
+                    if (!this.draggedItem) return;
+                    
+                    const { bucketIndex: fromBucketIndex, taskIndex } = this.draggedItem;
+                    if (fromBucketIndex === toBucketIndex) return;
+
+                    const taskToMove = this.distributedResults[fromBucketIndex].tasks[taskIndex];
+                    
+                    this.distributedResults[fromBucketIndex].tasks.splice(taskIndex, 1);
+                    this.distributedResults[fromBucketIndex].totalWeight -= taskToMove.value;
+                    this.distributedResults[fromBucketIndex].totalWeight = parseFloat(this.distributedResults[fromBucketIndex].totalWeight.toFixed(2));
+
+                    this.distributedResults[toBucketIndex].tasks.push(taskToMove);
+                    this.distributedResults[toBucketIndex].totalWeight += taskToMove.value;
+                    this.distributedResults[toBucketIndex].totalWeight = parseFloat(this.distributedResults[toBucketIndex].totalWeight.toFixed(2));
+
+                    this.draggedItem = null;
+                },
+                recalcBucketWeight(bucketIndex) {
+                    const bucket = this.distributedResults[bucketIndex];
+                    bucket.totalWeight = bucket.tasks.reduce((sum, t) => sum + t.value, 0);
+                },
+
+                // --- Save / Load Data ---
+                saveDataToFile() {
+                    const data = { employees: this.employees, taskSets: this.taskSets, timestamp: Date.now() };
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `เซฟงานของวันที่${new Date().toISOString().slice(0,10)}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    this.showToast('บันทึกไฟล์เรียบร้อย');
+                },
+                loadDataFromFile(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            if(data.employees && data.taskSets) {
+                                this.employees = data.employees;
+                                this.taskSets = data.taskSets;
+                                this.showToast('โหลดข้อมูลสำเร็จ');
+                            } else {
+                                this.showToast('รูปแบบไฟล์ไม่ถูกต้อง', 'error');
+                            }
+                        } catch (err) {
+                            this.showToast('เกิดข้อผิดพลาดในการอ่านไฟล์', 'error');
+                        }
+                    };
+                    reader.readAsText(file);
+                    event.target.value = '';
+                },
+                saveToStorage() {
+                    localStorage.setItem('jd_employees_v3', JSON.stringify(this.employees));
+                    localStorage.setItem('jd_taskSets_v3', JSON.stringify(this.taskSets));
+                },
+                loadFromStorage() {
+                    const emp = localStorage.getItem('jd_employees_v3');
+                    const tsk = localStorage.getItem('jd_taskSets_v3');
+                    if (emp) this.employees = JSON.parse(emp);
+                    if (tsk) this.taskSets = JSON.parse(tsk);
+                },
+
+                // --- Task Logic ---
+                addTaskSet() {
+                    this.taskSets.push({ id: Date.now(), setName: `ชื่อโซน ${this.taskSets.length + 1}`, mode: 'single', tempName: '', tempValue: '', bulkInput: '', items: [] });
+                },
+                removeTaskSet(index) { this.taskSets.splice(index, 1); },
+                resetTaskSets() {
+                    if(confirm('ยืนยันการล้างชุดงานทั้งหมด?')) {
+                        this.taskSets = [{ id: Date.now(), setName: "โซน 1", mode: 'single', tempName: '', tempValue: '', bulkInput: '', items: [] }];
+                        this.showToast('ล้างชุดงานเรียบร้อย');
+                    }
+                },
+                focusNextInput(event) {
+                    const inputs = event.target.parentElement.querySelectorAll('input');
+                    if(inputs[1]) inputs[1].focus();
+                },
+                addItemToSet(set) {
+                    if (!set.tempValue) return;
+                    const name = set.tempName.trim() || `งาน ${set.items.length + 1}`;
+                    const val = parseFloat(set.tempValue);
+                    if (isNaN(val)) return;
+                    set.items.push({ name: name, value: val });
+                    set.tempName = ''; set.tempValue = '';
+                },
+                removeItemFromSet(set, index) { set.items.splice(index, 1); },
+                sumSet(set) { return set.items.reduce((s, i) => s + i.value, 0); },
+                parseBulkInput(set) {
+                    if(!set.bulkInput) return;
+                    const lines = set.bulkInput.split('\n');
+                    let addedCount = 0;
+                    lines.forEach(line => {
+                        line = line.trim();
+                        if(!line) return;
+                        const match = line.match(/^(.*?)[:\s]+(\d+(\.\d+)?)$/);
+                        if (match) {
+                            let name = match[1].trim();
+                            let val = parseFloat(match[2]);
+                            if (!name) name = `งาน ${set.items.length + 1}`;
+                            set.items.push({ name, value: val });
+                            addedCount++;
+                        } else {
+                            const val = parseFloat(line);
+                            if (!isNaN(val)) {
+                                set.items.push({ name: `งาน ${set.items.length + 1}`, value: val });
+                                addedCount++;
+                            }
+                        }
+                    });
+                    set.bulkInput = ''; set.mode = 'single'; 
+                    this.showToast(`เพิ่ม ${addedCount} รายการเรียบร้อย`);
+                },
+
+                // --- Employee Logic ---
+                addEmployee() {
+                    this.employees.push({ name: `พนักงาน ${this.employees.length + 1}`, capacity: 100, id: Date.now() });
+                },
+                removeEmployee(index) {
+                    if (this.employees.length <= 1) return this.showToast('ต้องมีพนักงานอย่างน้อย 1 คน', 'error');
+                    this.employees.splice(index, 1);
+                },
+                resetEmployees() {
+                    if(confirm('ยืนยันการล้างรายชื่อทั้งหมด?')) {
+                        this.employees = [{ name: 'พนักงาน 1', capacity: 100, id: Date.now() }];
+                        this.showToast('ล้างรายชื่อเรียบร้อย');
+                    }
+                },
+
+                // --- Calculation ---
+                calculateDistribution() {
+                    const activeEmployees = this.employees.filter(e => e.name.trim() !== "");
+                    if (activeEmployees.length === 0) return this.showToast("เพิ่มพนักงานอย่างน้อย 1 คน", 'error');
+
+                    // ---------------------------------------------------------
+                    // [เพิ่มใหม่] ตรวจสอบว่ามีผลลัพธ์เดิมอยู่หรือไม่ เพื่อป้องกันการเผลอกดซ้ำ
+                    // ---------------------------------------------------------
+                    if (this.distributedResults.length > 0) {
+                        const confirmRecalculate = confirm("คุณมีผลการกระจายงานอยู่แล้ว หากคำนวณใหม่ สิ่งที่คุณจัดเรียงไว้ด้วยมือ (Drag & Drop) จะถูกรีเซ็ตทั้งหมด ยืนยันที่จะคำนวณใหม่หรือไม่?");
+                        if (!confirmRecalculate) return; // หากผู้ใช้กด Cancel (ยกเลิก) ให้หยุดการทำงานทันที
+                    }
+                    // ---------------------------------------------------------
+
+                    let buckets = activeEmployees.map(e => ({
+                        employeeName: e.name,
+                        capacity: e.capacity || 100, 
+                        tasks: [],
+                        totalWeight: 0
+                    }));
+
+                    let allTasks = [];
+                    let hasWork = false;
+                    this.taskSets.forEach((set, setIndex) => {
+                        set.items.forEach(item => {
+                            allTasks.push({ name: item.name, value: item.value, originalSetIndex: setIndex, originalSetName: set.setName });
+                            hasWork = true;
+                        });
+                    });
+
+                    if (!hasWork) return this.showToast("ไม่พบรายการงาน", 'error');
+                    allTasks.sort((a, b) => b.value - a.value);
+
+                    allTasks.forEach(task => {
+                        let bestBucketIndex = 0;
+                        let minLoadRatio = buckets[0].totalWeight / buckets[0].capacity;
+                        for (let i = 1; i < buckets.length; i++) {
+                            const ratio = buckets[i].totalWeight / buckets[i].capacity;
+                            if (ratio < minLoadRatio) {
+                                minLoadRatio = ratio;
+                                bestBucketIndex = i;
+                            }
+                        }
+                        buckets[bestBucketIndex].tasks.push(task);
+                        buckets[bestBucketIndex].totalWeight += task.value;
+                    });
+
+                    buckets.forEach(bucket => {
+                        bucket.totalWeight = parseFloat(bucket.totalWeight.toFixed(2));
+                        bucket.tasks.sort((a, b) => {
+                            if (a.originalSetIndex !== b.originalSetIndex) return a.originalSetIndex - b.originalSetIndex;
+                            return b.value - a.value;
+                        });
+                    });
+
+                    this.distributedResults = buckets;
+                    this.showToast(`คำนวณเสร็จสิ้น! แบ่งงานให้ ${activeEmployees.length} คน`);
+                    setTimeout(() => {
+                        const el = document.getElementById('export-area');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                },
+
+                // --- Style Helpers ---
+                showToast(msg, type = 'success') {
+                    this.toast = { show: true, message: msg, type };
+                    setTimeout(() => this.toast.show = false, 3000);
+                },
+                getStyle(index) { return this.colors[index % this.colors.length]; },
+                getDotColor(index) { return this.getStyle(index).dot; },
+                getCapacityColor(cap) {
+                    if (cap > 100) return 'text-green-600 font-bold border-green-200 bg-green-50 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
+                    if (cap < 100) return 'text-orange-500 border-orange-200 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800';
+                    return 'text-gray-600 border-gray-200 dark:text-gray-400 dark:border-slate-600';
+                },
+                getLoadPercentage(currentWeight, capacity) {
+                    if (this.grandTotalWeight === 0 || this.totalCapacityPoints === 0) return 0;
+                    const globalSharePerPoint = this.grandTotalWeight / this.totalCapacityPoints;
+                    const expectedLoad = globalSharePerPoint * capacity;
+                    if (expectedLoad === 0) return 0;
+                    return Math.round((currentWeight / expectedLoad) * 100);
+                },
+                getLoadColorClass(percent) {
+                    if (percent > 115) return 'text-red-600 bg-red-50 border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800';
+                    if (percent < 85) return 'text-blue-500 bg-blue-50 border-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800';
+                    return 'text-green-600 bg-green-50 border-green-100 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
+                },
+
+                // --- Exports (UPDATED) ---
+                copyText() {
+                    let text = `สรุปการแบ่งงาน (${new Date().toLocaleDateString()})\n--------------------------------\n`;
+                    this.distributedResults.forEach(res => {
+                        text += `👤 ${res.employeeName} (Cap: ${res.capacity}%)\n   น้ำหนักรวม: ${res.totalWeight}\n   งานที่ได้รับ:\n`;
+                        res.tasks.forEach(t => text += `   - ${t.name}: ${t.value}\n`);
+                        text += `\n`;
+                    });
+                    navigator.clipboard.writeText(text).then(() => this.showToast("คัดลอกลง Clipboard แล้ว"));
+                },
+                exportToExcel() {
+                    let data = [];
+                    this.distributedResults.forEach(res => {
+                        res.tasks.forEach((t, i) => {
+                            data.push({
+                                "ชื่อพนักงาน": res.employeeName,
+                                "Capacity(%)": res.capacity,
+                                "ลำดับงาน": i + 1,
+                                "ชื่อโซน": t.originalSetName,
+                                "ชื่อร้าน": t.name,
+                                "จำนวนรายการ": t.value
+                            });
+                        });
+                    });
+                    const ws = XLSX.utils.json_to_sheet(data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Work_Distribution");
+                    XLSX.writeFile(wb, `ไฟล์งานของวันที่_${new Date().toISOString().slice(0,10)}.xlsx`);
+                    this.showToast("ดาวน์โหลด Excel เรียบร้อย");
+                },
+                exportToImage() {
+                    const element = document.getElementById('export-area');
+                    this.showToast("กำลังสร้างรูปภาพ...");
+                    
+                    // ตั้งค่า options สำหรับการสร้างรูปภาพ
+                    const options = {
+                        scale: 2, // เพิ่มความละเอียดของภาพ
+                        useCORS: true,
+                        backgroundColor: '#ffffff', // บังคับพื้นหลังสีขาว
+                        onclone: (clonedDoc) => {
+                            const clonedElement = clonedDoc.getElementById('export-area');
+                            // บังคับเปลี่ยน class เป็น Light Mode ชั่วคราวเพื่อให้ Text ชัดเจนที่สุดในรูป
+                            clonedElement.classList.remove('dark');
+                            clonedElement.style.color = '#1e293b'; 
+                        }
+                    };
+
+                    // ใช้ html2pdf ที่มีอยู่แล้วให้ประมวลผลเป็นรูปภาพ
+                    html2pdf().set({ html2canvas: options }).from(element).outputImg('img').then((img) => {
+                        // img ที่ได้กลับมาคือ HTMLImageElement ที่มี base64 data อยู่ใน src
+                        const link = document.createElement('a');
+                        link.download = `รูปงานของวันที่${new Date().toISOString().slice(0,10)}.png`; // ตั้งชือไฟล์รูป
+                        link.href = img.src; // นำข้อมูลรูปภาพใส่ลงในลิงก์
+                        link.click(); // จำลองการคลิกเพื่อดาวน์โหลด
+                        this.showToast("บันทึกรูปภาพเรียบร้อย");
+                    }).catch(err => {
+                        console.error("เกิดข้อผิดพลาดในการสร้างรูปภาพ:", err);
+                        this.showToast("เกิดข้อผิดพลาดในการสร้างรูปภาพ", "error");
+                    });
+                },
+                exportToPDF() {
+                    const element = document.getElementById('export-area');
+                    this.showToast("กำลังสร้าง PDF...");
+                    
+                    const opt = {
+                        margin:       [10, 10, 10, 10], // top, left, bottom, right (mm)
+                        filename:     `PDFงานของวันที่${new Date().toISOString().slice(0,10)}.pdf`,
+                        image:        { type: 'jpeg', quality: 0.98 },
+                        html2canvas:  { 
+                            scale: 2, 
+                            useCORS: true, 
+                            backgroundColor: '#ffffff',
+                            onclone: (clonedDoc) => {
+                                const clonedElement = clonedDoc.getElementById('export-area');
+                                clonedElement.classList.remove('dark'); // บังคับ Light Mode ใน PDF
+                                clonedElement.style.color = '#000000';
+                            }
+                        },
+                        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                        // สำคัญ: ตั้งค่า pagebreak เพื่อไม่ให้ตัดกลางกล่อง
+                        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+                    };
+
+                    html2pdf().set(opt).from(element).save().then(() => {
+                        this.showToast("บันทึก PDF เรียบร้อย");
+                    }).catch(err => {
+                        console.error(err);
+                        this.showToast("เกิดข้อผิดพลาดในการสร้าง PDF", "error");
+                    });
+                }
+            }
+        }).mount('#app');
+    </script>
 </body>
 </html>
